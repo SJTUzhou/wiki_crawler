@@ -17,13 +17,13 @@ import bs4
 DEFAULT_OUTPUT = 'ray_wiki_output'
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36'
 TIME_INTERVAL = 3  # interval before retry
-NUM_WORKERS = 8
+NUM_WORKERS = 120
 
 
 visited_urls = set()  # all urls already visited, to not visit twice
 pending_urls = []  # queue
 
-def load_urls(session_file):
+def load_visited_urls(session_file):
     """Resume previous session if any, load visited URLs"""
     try:
         with open(session_file) as fin:
@@ -31,10 +31,27 @@ def load_urls(session_file):
                 visited_urls.add(line.strip())
     except FileNotFoundError:
         pass
+
+
+def load_pending_urls(pending_url_file):
+    """Resume previous session if any, load pending URLs"""
+    try:
+        with open(pending_url_file) as fin:
+            for line in fin:
+                pending_urls.append(line.strip())
+    except FileNotFoundError:
+        pass
+
     
 def record_visited_urls(session_file:str, visited_not_recorded_urls:list) -> None:
     with open(session_file, 'a') as fout:
         for url in visited_not_recorded_urls:
+            fout.write(url + '\n')
+
+
+def record_pending_urls(pending_url_file:str, pending_urls:list) -> None:
+    with open(pending_url_file, 'w') as fout:
+        for url in pending_urls:
             fout.write(url + '\n')
 
 
@@ -64,7 +81,7 @@ def extract_text_with_math(element: bs4.element.Tag) -> str:
 
 
 @ray.remote
-def scrap(base_url, article, output_dir, process_id, visited_urls:set):
+def scrap(base_url:str, article:str, output_dir:str, process_id:int, visited_urls:set):
     """Represents one request per article"""
     article_format = article.replace('/wiki/', '')[:35]
     print(article_format)
@@ -74,9 +91,9 @@ def scrap(base_url, article, output_dir, process_id, visited_urls:set):
         # time.sleep(TIME_INTERVAL)
         r = requests.get(full_url, headers={'User-Agent': USER_AGENT})
     except requests.exceptions.ConnectionError:
-        print("Check your Internet connection")
-        print(f"Retrying in {TIME_INTERVAL} seconds...")
-        time.sleep(TIME_INTERVAL)
+        # print("Check your Internet connection")
+        # print(f"Retrying in {TIME_INTERVAL} seconds...")
+        # time.sleep(TIME_INTERVAL)
         try:
             r = requests.get(full_url, headers={'User-Agent': USER_AGENT})
         except requests.exceptions.ConnectionError:
@@ -172,15 +189,22 @@ def append_to_jsonl(file_path, data):
 
 
 def main(initial_url, output_dir):
+    global pending_urls, visited_urls
+    
     os.makedirs(output_dir, exist_ok=True)
     print("\t(Press CTRL+C to pause)\n")
 
     session_file = os.path.join(output_dir, "session_visited_urls.txt")
-    load_urls(session_file)
+    load_visited_urls(session_file)
+    print("Number of visited URLs: {}".format(len(visited_urls)))
 
     base_url = '{uri.scheme}://{uri.netloc}'.format(uri=urlparse(initial_url))
     initial_url = initial_url[len(base_url):]
-    pending_urls = [initial_url, ]
+    pending_url_file = os.path.join(output_dir, "pending_urls.txt")
+    load_pending_urls(pending_url_file)
+    if len(pending_urls) == 0:
+        pending_urls.append(initial_url)
+
     
     while len(pending_urls) > 0:
         try:
@@ -203,11 +227,14 @@ def main(initial_url, output_dir):
                         failed_urls.append(_url)
 
                 visited_urls.update(prev_visited_urls)
+                unrecorded_urls = set(prev_visited_urls) - set(visited_urls)
                 new_pending_urls.update(failed_urls)
-                record_visited_urls(session_file, prev_visited_urls)
+                if bool(unrecorded_urls):
+                    record_visited_urls(session_file, unrecorded_urls)
                 print("Number of visited URLs in total: {}".format(len(visited_urls)))
                     
             pending_urls = list(new_pending_urls)
+            record_pending_urls(pending_url_file, pending_urls)
             
         except KeyboardInterrupt:
             input("\n> PAUSED. Press [ENTER] to continue...\n")
