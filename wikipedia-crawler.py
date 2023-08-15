@@ -69,7 +69,7 @@ def scrap(base_url, article, output_file, session_file):
         print("Check your Internet connection")
         # input("Press [ENTER] to continue to the next request.")
         print("Retrying in 5 seconds...")
-        time.sleep(5)
+        time.sleep(DEFAULT_INTERVAL)
         try:
             r = requests.get(full_url, headers={'User-Agent': USER_AGENT})
         except requests.exceptions.ConnectionError:
