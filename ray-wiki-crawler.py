@@ -84,22 +84,20 @@ def extract_text_with_math(element: bs4.element.Tag) -> str:
 def scrap(base_url:str, article:str, output_dir:str, process_id:int, visited_urls:set):
     """Represents one request per article"""
     article_format = article.replace('/wiki/', '')[:35]
-    print(article_format)
 
     full_url = base_url + article
     try:
         # time.sleep(TIME_INTERVAL)
         r = requests.get(full_url, headers={'User-Agent': USER_AGENT})
     except requests.exceptions.ConnectionError:
+        print(f"Failed to request page {article} (ConnectionError)")
         # print("Check your Internet connection")
         # print(f"Retrying in {TIME_INTERVAL} seconds...")
         # time.sleep(TIME_INTERVAL)
-        try:
-            r = requests.get(full_url, headers={'User-Agent': USER_AGENT})
-        except requests.exceptions.ConnectionError:
-            return [], False
+        
+        return [], False
     if r.status_code not in (200, 404):
-        print("Failed to request page (code {})".format(r.status_code))
+        print("Failed to request page {} (code {})".format(article, r.status_code))
         return [], False
 
     try:
@@ -121,14 +119,15 @@ def scrap(base_url:str, article:str, output_dir:str, process_id:int, visited_url
                 continue
             elif href[-4:] in ".png .jpg .jpeg .svg":  # ignore image files inside articles
                 continue
-            elif base_url + href in visited_urls:  # already visited
+            elif href in visited_urls:  # already visited
                 continue
             
             _pend_urls.append(href)
 
 
         # skip if already added text from this article, as continuing session
-        if full_url in visited_urls:  # already visited
+        if article in visited_urls:  # already visited
+            print("Already visited: {}".format(article))
             return _pend_urls, True
 
 
@@ -169,6 +168,7 @@ def scrap(base_url:str, article:str, output_dir:str, process_id:int, visited_url
 
         json_data = {"url": full_url, "text": out_text}
         output_file = os.path.join(output_dir, "wiki_data_{:03d}.jsonl".format(process_id))
+        print("Crawl from ", article_format)
         append_to_jsonl(output_file, json_data)
 
         return _pend_urls, True
@@ -190,7 +190,7 @@ def append_to_jsonl(file_path, data):
 
 def main(initial_url, output_dir):
     global pending_urls, visited_urls
-    
+
     os.makedirs(output_dir, exist_ok=True)
     print("\t(Press CTRL+C to pause)\n")
 
