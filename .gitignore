@@ -166,3 +166,5 @@ cython_debug/
 wiki_math_output/
 ray_wiki_output_unique/
 archive/
+wiki_target_url/
+wiki_en_unique_urls.txt
